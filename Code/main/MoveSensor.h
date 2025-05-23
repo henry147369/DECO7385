@@ -46,6 +46,9 @@ bool initMPU() {
 
 
 void setupMPU() {
+  Wire.begin();
+  //Wire.setClock(50000);
+  
   pinMode(INTERRUPT_PIN, INPUT);
 
   if (!initMPU()) {
@@ -107,6 +110,8 @@ void updateRemoteMotionSensor() {
 
 
 void updateMotionSensor() {
+  if (!dmpReady || mpuPermanentlyFailed) return;
+  
   updateRemoteMotionSensor(); // Receive signal from sub-board
   
   if (!safeReadMPU()) {
@@ -115,7 +120,7 @@ void updateMotionSensor() {
         Serial.println("[警告] MPU读取失败，将跳过该帧");
         warned = true; // 仅打印一次警告
       }
-      return; // ⛔️ 跳过当前帧，继续 loop
+      return; // 跳过当前帧，继续 loop
   }
 
   // 恢复状态（如果曾失败）
@@ -131,11 +136,11 @@ void updateMotionSensor() {
   float roll = ypr[2] * 180 / M_PI;
   unsigned long now = millis();
 
-  if ((roll > 20 || roll < -20) && (now - leftRightTriggerTime > TRIGGER_COOLDOWN)) {
+  if ((roll > 30 || roll < -30) && (now - leftRightTriggerTime > TRIGGER_COOLDOWN)) {
     leftRightTriggered = true;
     leftRightTriggerTime = now;
   }
-  if ((pitch > 20 || pitch < -20) && (now - forwardBackTriggerTime > TRIGGER_COOLDOWN)) {
+  if ((pitch > 30 || pitch < -30) && (now - forwardBackTriggerTime > TRIGGER_COOLDOWN)) {
     forwardBackTriggered = true;
     forwardBackTriggerTime = now;
   }
