@@ -44,40 +44,6 @@ bool initMPU() {
   return true;
 }
 
-void recoverI2C() {
-  Serial.println("尝试彻底重启 I2C 总线...");
-
-  // 强制拉低SCL/SDA几次，释放挂死的I2C设备
-  pinMode(22, OUTPUT);  // SDA
-  pinMode(21, OUTPUT);  // SCL
-  for (int i = 0; i < 9; i++) {
-    digitalWrite(21, LOW);
-    delayMicroseconds(5);
-    digitalWrite(21, HIGH);
-    delayMicroseconds(5);
-  }
-
-  // 恢复为输入
-  pinMode(21, INPUT);
-  pinMode(22, INPUT);
-
-  // 软重启Wire库
-  Wire.end();
-  delay(100);
-  Wire.begin(50000);
-  Wire.setClock(50000);
-
-  if (initMPU()) {
-    Serial.println("[恢复成功] I2C 总线和 MPU6050 已重连");
-    dmpReady = true;
-    failedReadCount = 0;
-    lastSuccess = millis();
-  } else {
-    Serial.println("[失败] I2C 设备仍无法连接");
-    dmpReady = false;
-  }
-}
-
 
 void setupMPU() {
   pinMode(INTERRUPT_PIN, INPUT);
@@ -101,11 +67,10 @@ bool safeReadMPU(unsigned long timeout = 30) {
   unsigned long start = millis();
   while (!mpu.dmpGetCurrentFIFOPacket(fifoBuffer)) {
     if (millis() - start > timeout) {
-      Serial.println("MPU读取超时，跳出阻塞！");
       failedReadCount++;
       return false;
     }
-    delay(1); // 避免 busy-loop
+    delay(5); // 避免 busy-loop
   }
   failedReadCount = 0;
   return true;
@@ -145,16 +110,18 @@ void updateMotionSensor() {
   updateRemoteMotionSensor(); // Receive signal from sub-board
   
   if (!safeReadMPU()) {
-    if (failedReadCount >= MAX_FAILED_READS) {
-      Serial.println("[严重] MPU 多次失败，将不再访问该模块");
-      mpuPermanentlyFailed = true;  // 标记永久失效
-      dmpReady = false;
-    }
-    return;
+      static bool warned = false;
+      if (!warned) {
+        Serial.println("[警告] MPU读取失败，将跳过该帧");
+        warned = true; // 仅打印一次警告
+      }
+      return; // ⛔️ 跳过当前帧，继续 loop
   }
 
+  // 恢复状态（如果曾失败）
   failedReadCount = 0;
   lastSuccess = millis();
+  mpuPermanentlyFailed = false;
 
   mpu.dmpGetQuaternion(&q, fifoBuffer);
   mpu.dmpGetGravity(&gravity, &q);
